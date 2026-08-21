@@ -1,0 +1,28 @@
+# Worked example of a canary release for order-service, the highest-risk
+# service to deploy (it writes financial state and publishes Kafka
+# events). ArgoCD's rollout for order-service (argocd/apps/order-service.yaml)
+# deploys the new version labeled version: v2 alongside the existing v1
+# WITHOUT shifting traffic; this VirtualService is what actually moves
+# traffic, in a separate, deliberate step - decoupling "deploy" from
+# "release" is the whole point of doing canaries at the mesh layer instead
+# of just doing a rolling update.
+#
+# Promotion procedure (see docs/07-istio-service-mesh.md for the full
+# checklist): after this applies, watch order-service's error rate and
+# p99 latency for v2 in Grafana for ~15-30 min. If healthy, edit the
+# weights below toward 100/0 in stages (e.g. 75/25 -> 50/50 -> 100/0). If
+# v2 misbehaves, set weight back to 100/0 favoring v1 - that's the entire
+# rollback, no redeploy required because v1 pods were never removed.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: order-service-canary
+  namespace: scalecart-prod
+spec:
+  hosts: ["order-service"]
+  http:
+    - route:
+        - destination: { host: order-service, subset: v1 }
+          weight: 90
+        - destination: { host: order-service, subset: v2 }
+          weight: 10

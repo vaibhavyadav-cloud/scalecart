@@ -1,0 +1,193 @@
+# Reusable workflow, called once per service by the 7 thin ci-*.yml
+# workflows below. Centralizing the pipeline shape here means fixing/
+# improving the pipeline (e.g. tightening the Trivy severity gate) is a
+# ONE-FILE change instead of a 7-file change - the same DRY reasoning as
+# the Helm library chart (docs/09-helm-charts.md). See docs/11-github-actions-cicd.md
+# for the full stage-by-stage explanation.
+name: Reusable - Build, Test, Scan, Push
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        required: true
+        type: string
+      service_path:
+        required: true
+        type: string
+      language:
+        required: true
+        type: string   # node | go | python | java
+      bump_gitops:
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      SONAR_TOKEN:
+        required: false
+
+permissions:
+  contents: write        # needed to commit the GitOps image-tag bump
+  packages: write         # needed to push to GHCR
+  security-events: write  # needed to upload Trivy SARIF to the Security tab
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}
+
+jobs:
+  build-test-scan-push:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.service_path }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------- Language-specific setup ----------
+      - if: inputs.language == 'node'
+        uses: actions/setup-node@v4
+        with: { node-version: "20", cache: "npm", cache-dependency-path: "${{ inputs.service_path }}/package-lock.json" }
+      - if: inputs.language == 'go'
+        uses: actions/setup-go@v5
+        with: { go-version: "1.22" }
+      - if: inputs.language == 'python'
+        uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - if: inputs.language == 'java'
+        uses: actions/setup-java@v4
+        with: { distribution: "temurin", java-version: "21", cache: "maven" }
+
+      # ---------- Install ----------
+      - if: inputs.language == 'node'
+        run: npm ci
+      - if: inputs.language == 'python'
+        run: pip install -r requirements-dev.txt
+
+      # ---------- Lint ----------
+      - name: Lint
+        run: |
+          case "${{ inputs.language }}" in
+            node)   npm run lint ;;
+            go)     go vet ./... ;;
+            python) python -m flake8 app ;;
+            java)   true ;; # style handled by Sonar's own rules for the JVM service
+          esac
+
+      # ---------- Unit / integration tests + coverage ----------
+      - name: Test
+        run: |
+          case "${{ inputs.language }}" in
+            node)   npm test -- --coverage ;;
+            go)     go test ./... -coverprofile=coverage.out ;;
+            python) python -m pytest --cov=app --cov-report=xml ;;
+            java)   mvn -B test ;;
+          esac
+
+      # ---------- Static analysis + quality gate ----------
+      # SonarQube (self-hosted or SonarCloud) analyzes source + the
+      # coverage report produced above. sonar-project.properties in each
+      # Node/frontend service, and pom.xml's jacoco plugin for
+      # order-service, are what point Sonar at the right coverage file.
+      # The action BLOCKS the job (exit non-zero) if the project's quality
+      # gate fails - a real gate, not just a dashboard nobody looks at.
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v3
+        with:
+          projectBaseDir: ${{ inputs.service_path }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+      - name: SonarQube Quality Gate
+        uses: SonarSource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # ---------- Build + push image ----------
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.service_path }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ---------- Vulnerability scan of the image just pushed ----------
+      # Fails the build on CRITICAL/HIGH CVEs - by design, this runs
+      # AFTER push (simpler than a build/scan/push-only-if-clean dance)
+      # but the GitOps tag-bump step below only runs if this step passes,
+      # so a vulnerable image is never actually deployed even though it
+      # briefly exists in the registry.
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: "${{ env.IMAGE }}:${{ github.sha }}"
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+        continue-on-error: false
+      - name: Upload Trivy results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ inputs.service_path }}/trivy-results.sarif
+
+      # ---------- Software Bill of Materials ----------
+      # An SBOM lets anyone later answer "are we affected by CVE-XXXX"
+      # for THIS specific image without re-scanning it - increasingly a
+      # compliance requirement, and cheap to produce here since Syft
+      # already has the image locally from the build step.
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: "${{ env.IMAGE }}:${{ github.sha }}"
+          format: cyclonedx-json
+          output-file: sbom.cyclonedx.json
+
+      # ---------- Store build artifacts ----------
+      # Coverage report, Trivy SARIF, and the SBOM are all retained as
+      # downloadable GitHub Actions artifacts - the audit trail for "what
+      # did we ship and how do we know it was safe" for every single build.
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.service_name }}-${{ github.sha }}-artifacts
+          retention-days: 90
+          path: |
+            ${{ inputs.service_path }}/coverage/**
+            ${{ inputs.service_path }}/coverage.out
+            ${{ inputs.service_path }}/coverage.xml
+            ${{ inputs.service_path }}/target/site/jacoco/**
+            ${{ inputs.service_path }}/trivy-results.sarif
+            ${{ inputs.service_path }}/sbom.cyclonedx.json
+
+      # ---------- GitOps: bump the dev image tag ----------
+      # This is the ONLY step in the whole pipeline that touches the
+      # deployment repo state, and it does so with a plain git commit -
+      # not kubectl, not helm upgrade. ArgoCD's dev Application (automated
+      # sync) picks this commit up within its poll interval and rolls it
+      # out. See docs/10-argocd-gitops.md.
+      - name: Bump dev image tag in GitOps values
+        if: inputs.bump_gitops && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "scalecart-ci"
+          git config user.email "ci@scalecart.example.com"
+          yq -i ".${{ inputs.service_name }}.image.tag = \"${{ github.sha }}\"" \
+            helm/scalecart-umbrella/values-dev.yaml
+          git add helm/scalecart-umbrella/values-dev.yaml
+          git commit -m "ci: bump ${{ inputs.service_name }} dev image to ${{ github.sha }}" || echo "nothing to commit"
+          git push
+        working-directory: .

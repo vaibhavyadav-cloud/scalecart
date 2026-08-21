@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: product-service
+  namespace: scalecart-prod
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: product-service-config
+  namespace: scalecart-prod
+data:
+  PORT: "4002"
+  MONGO_DB: "scalecart_products"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-service
+  namespace: scalecart-prod
+  labels: { app: product-service, tier: backend }
+spec:
+  # Highest baseline replica count of the read path services - catalog
+  # browsing is the highest-QPS endpoint in the platform (every page view
+  # hits it), see docs/14-scaling-to-1m-users.md for the request-mix math
+  # behind this number.
+  replicas: 4
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app: product-service }
+  template:
+    metadata:
+      labels: { app: product-service, tier: backend }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4002"
+    spec:
+      serviceAccountName: product-service
+      priorityClassName: scalecart-standard
+      terminationGracePeriodSeconds: 20
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: product-service } }
+      containers:
+        - name: product-service
+          image: ghcr.io/scalecart/product-service:latest
+          ports: [{ containerPort: 4002 }]
+          envFrom:
+            - configMapRef: { name: product-service-config }
+            - secretRef: { name: product-service-secrets }
+          resources:
+            requests: { cpu: 200m, memory: 128Mi }   # Go's low memory footprint vs. the Node/Java services
+            limits: { cpu: 750m, memory: 256Mi }
+          livenessProbe:
+            httpGet: { path: /health/live, port: 4002 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health/ready, port: 4002 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-service
+  namespace: scalecart-prod
+spec:
+  selector: { app: product-service }
+  ports: [{ port: 4002, targetPort: 4002, name: http }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: product-service
+  namespace: scalecart-prod
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: product-service }
+  minReplicas: 4
+  maxReplicas: 40   # highest ceiling in the platform - this is the service most exposed to flash-sale-style spikes
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 15
+      policies: [{ type: Percent, value: 150, periodSeconds: 60 }]
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies: [{ type: Percent, value: 20, periodSeconds: 60 }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: product-service
+  namespace: scalecart-prod
+spec:
+  minAvailable: 75%
+  selector: { matchLabels: { app: product-service } }

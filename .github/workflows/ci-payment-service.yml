@@ -1,0 +1,17 @@
+name: CI - payment-service
+
+on:
+  push:
+    branches: [main]
+    paths: ["services/payment-service/**"]
+  pull_request:
+    paths: ["services/payment-service/**"]
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-scan-push.yml
+    with:
+      service_name: payment-service
+      service_path: services/payment-service
+      language: node
+    secrets: inherit

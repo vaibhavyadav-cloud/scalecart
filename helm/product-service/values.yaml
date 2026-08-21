@@ -1,0 +1,47 @@
+namespace: scalecart-prod
+tier: backend
+port: 4002
+metricsPath: /metrics
+
+image:
+  repository: ghcr.io/scalecart/product-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 4
+priorityClassName: scalecart-standard
+terminationGracePeriodSeconds: 20
+topologySpread: true
+writableTmp: false
+kafkaClient: false
+hasSecrets: true
+
+initContainer:
+  enabled: false   # MongoDB is schemaless - nothing to migrate
+
+startupProbe:
+  enabled: false
+livenessProbe:
+  path: /health/live
+readinessProbe:
+  path: /health/ready
+
+resources:
+  requests: { cpu: 200m, memory: 128Mi }
+  limits: { cpu: 750m, memory: 256Mi }
+
+autoscaling:
+  enabled: true
+  minReplicas: 4
+  maxReplicas: 40
+  targetCPUUtilizationPercentage: 65
+
+pdb:
+  minAvailable: 3
+
+serviceAccount:
+  irsaRoleArn: ""
+
+env:
+  PORT: "4002"
+  MONGO_DB: scalecart_products

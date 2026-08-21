@@ -1,0 +1,37 @@
+apiVersion: v2
+name: scalecart-umbrella
+description: >
+  Deploys the entire ScaleCart platform as one Helm release, aggregating
+  all 7 per-service charts as dependencies. ArgoCD's root Application
+  (argocd/root-app.yaml) points at this chart. See docs/09-helm-charts.md
+  for why an umbrella chart exists on top of 7 already-independent charts.
+version: 1.0.0
+dependencies:
+  - name: auth-service
+    version: "1.0.0"
+    repository: "file://../auth-service"
+    condition: authService.enabled
+  - name: product-service
+    version: "1.0.0"
+    repository: "file://../product-service"
+    condition: productService.enabled
+  - name: cart-service
+    version: "1.0.0"
+    repository: "file://../cart-service"
+    condition: cartService.enabled
+  - name: order-service
+    version: "1.0.0"
+    repository: "file://../order-service"
+    condition: orderService.enabled
+  - name: payment-service
+    version: "1.0.0"
+    repository: "file://../payment-service"
+    condition: paymentService.enabled
+  - name: notification-service
+    version: "1.0.0"
+    repository: "file://../notification-service"
+    condition: notificationService.enabled
+  - name: frontend
+    version: "1.0.0"
+    repository: "file://../frontend"
+    condition: frontend.enabled

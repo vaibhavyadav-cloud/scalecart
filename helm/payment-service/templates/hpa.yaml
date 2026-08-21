@@ -1,0 +1,6 @@
+{{ include "common.hpa" . }}
+{{/* autoscaling.enabled=false in values.yaml - payment-service scales via
+     KEDA's ScaledObject on Kafka consumer lag instead (k8s/keda/), which
+     the Helm chart intentionally does not template - it's applied
+     separately since KEDA CRDs are cluster infra, not per-service config.
+     See docs/09-helm-charts.md. */}}

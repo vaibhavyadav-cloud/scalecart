@@ -1,0 +1,17 @@
+name: CI - frontend
+
+on:
+  push:
+    branches: [main]
+    paths: ["services/frontend/**"]
+  pull_request:
+    paths: ["services/frontend/**"]
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-scan-push.yml
+    with:
+      service_name: frontend
+      service_path: services/frontend
+      language: node
+    secrets: inherit

@@ -1,0 +1,30 @@
+# payment-service's real load signal is "how many unprocessed messages are
+# sitting in the order.created topic for our consumer group," not CPU -
+# the work per message is I/O-bound (a DB write + a simulated gateway
+# call), so CPU utilization stays flat even as lag grows. KEDA's Kafka
+# scaler polls consumer group lag directly and drives the same Deployment
+# a normal HPA would - it IS an HPA under the hood, KEDA just supplies a
+# custom metric HPAs don't natively understand. See docs/08-kafka-event-driven.md.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: payment-service-consumer
+  namespace: scalecart-prod
+spec:
+  scaleTargetRef:
+    name: payment-service
+  minReplicaCount: 2
+  maxReplicaCount: 20
+  cooldownPeriod: 120
+  pollingInterval: 15
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka-bootstrap.kafka.svc.cluster.local:9092
+        consumerGroup: payment-service-group
+        topic: order.created
+        # Scale out by 1 replica for roughly every 50 unconsumed messages
+        # per partition - tuned so a burst of orders doesn't leave
+        # customers waiting minutes for a payment result.
+        lagThreshold: "50"
+        activationLagThreshold: "5"

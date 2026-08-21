@@ -1,0 +1,9 @@
+apiVersion: v2
+name: common
+description: >
+  Shared library chart for ScaleCart microservices. Not deployable on its
+  own - every per-service chart declares this as a `type: library`
+  dependency and calls its named templates instead of hand-writing
+  Deployment/Service/HPA/PDB boilerplate 7 times. See docs/09-helm-charts.md.
+type: library
+version: 1.0.0

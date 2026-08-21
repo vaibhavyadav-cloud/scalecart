@@ -1,0 +1,120 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: order-service
+  namespace: scalecart-prod
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-service-config
+  namespace: scalecart-prod
+data:
+  DB_HOST: "order-postgres.scalecart-prod.svc.cluster.local"
+  DB_NAME: "scalecart_orders"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-bootstrap.kafka.svc.cluster.local:9092"
+  PRODUCT_SERVICE_URL: "http://product-service.scalecart-prod.svc.cluster.local:4002"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: scalecart-prod
+  labels: { app: order-service, tier: backend }
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app: order-service }
+  template:
+    metadata:
+      labels: { app: order-service, tier: backend, scalecart.io/kafka-client: "true" }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4004"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      serviceAccountName: order-service
+      priorityClassName: scalecart-critical
+      # JVM services need longer to drain (thread pools, open DB
+      # transactions, in-flight Kafka sends) than the Node/Go services.
+      terminationGracePeriodSeconds: 45
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: order-service } }
+      containers:
+        - name: order-service
+          image: ghcr.io/scalecart/order-service:latest
+          ports: [{ containerPort: 4004 }]
+          envFrom:
+            - configMapRef: { name: order-service-config }
+            - secretRef: { name: order-service-secrets }
+          resources:
+            # JVM services get the most headroom in the platform - the
+            # heap alone needs more than Go/Node's baseline.
+            requests: { cpu: 300m, memory: 512Mi }
+            limits: { cpu: 1000m, memory: 768Mi }
+          # startupProbe covers Spring Boot's slower cold start (Flyway
+          # migration + Hibernate metadata + Kafka producer init) - while
+          # it's running, liveness/readiness are suspended, so a slow-but-
+          # healthy boot is never mistaken for a crash loop.
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: 4004 }
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 4004 }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 4004 }
+            periodSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: scalecart-prod
+spec:
+  selector: { app: order-service }
+  ports: [{ port: 4004, targetPort: 4004, name: http }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: order-service
+  namespace: scalecart-prod
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: order-service }
+  minReplicas: 3
+  maxReplicas: 15
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60   # JVM pods are more expensive to spin up - scale up a bit less eagerly than Go/Node
+      policies: [{ type: Percent, value: 50, periodSeconds: 60 }]
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies: [{ type: Percent, value: 20, periodSeconds: 60 }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: order-service
+  namespace: scalecart-prod
+spec:
+  minAvailable: 2
+  selector: { matchLabels: { app: order-service } }

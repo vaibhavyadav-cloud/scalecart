@@ -1,0 +1,32 @@
+# Production overrides on top of values.yaml. Every subchart's OWN
+# values.yaml already defaults to the prod-shaped numbers (replica counts,
+# HPA ranges, PDBs) documented per-service in k8s/base/*.yaml - this file
+# only needs to supply the two things that genuinely differ per deploy:
+# the image tag (set by CI to the built commit SHA, see
+# .github/workflows/reusable-build-scan-push.yml) and the IRSA role ARNs
+# (set by Terraform's output, see terraform/modules/iam).
+#
+# CI/CD overrides image.tag at `helm upgrade` / ArgoCD sync time via
+# `--set <service>.image.tag=<sha>` rather than editing this file per
+# release - see docs/10-argocd-gitops.md and docs/11-github-actions-cicd.md.
+
+auth-service:
+  serviceAccount: { irsaRoleArn: "arn:aws:iam::123456789012:role/scalecart-prod-auth-service" }
+
+product-service:
+  serviceAccount: { irsaRoleArn: "arn:aws:iam::123456789012:role/scalecart-prod-product-service" }
+
+cart-service:
+  serviceAccount: { irsaRoleArn: "arn:aws:iam::123456789012:role/scalecart-prod-cart-service" }
+
+order-service:
+  serviceAccount: { irsaRoleArn: "arn:aws:iam::123456789012:role/scalecart-prod-order-service" }
+
+payment-service:
+  serviceAccount: { irsaRoleArn: "arn:aws:iam::123456789012:role/scalecart-prod-payment-service" }
+
+notification-service:
+  serviceAccount: { irsaRoleArn: "arn:aws:iam::123456789012:role/scalecart-prod-notification-service" }
+
+frontend:
+  serviceAccount: { irsaRoleArn: "arn:aws:iam::123456789012:role/scalecart-prod-frontend" }

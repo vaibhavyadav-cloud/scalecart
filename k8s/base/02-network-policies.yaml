@@ -1,0 +1,78 @@
+# Default-deny, then explicit allows - the same "deny by default, allow
+# what you can justify" posture as a cloud security group. Without the
+# default-deny policy, any compromised pod in the namespace could reach
+# any other pod's port; NetworkPolicy is what makes "product-service can
+# never be called directly by cart-service" an enforced fact instead of a
+# convention someone can forget.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: scalecart-prod
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Every pod may reach DNS and the Istio control plane (istiod) - without
+# this, default-deny also breaks name resolution and mTLS cert rotation.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-and-istiod
+  namespace: scalecart-prod
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: istio-system }
+      ports:
+        - { protocol: TCP, port: 15012 }
+        - { protocol: TCP, port: 15010 }
+---
+# Ingress gateway -> frontend and every backend service (this is coarse on
+# purpose; the FINE-grained "who can call whom" rule is enforced by Istio
+# AuthorizationPolicy in k8s/istio/authorization-policies.yaml, which
+# understands service identity via mTLS certs - NetworkPolicy only
+# understands IP/port and can't express "must be product-service calling,
+# not just anything on that port").
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-gateway-to-services
+  namespace: scalecart-prod
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: istio-system }
+    - from:
+        - podSelector: {}   # allow same-namespace pod-to-pod (mesh services calling each other)
+---
+# Application pods -> their own databases only (egress to the data-layer
+# CIDR/hostname would be added per environment; scoped by label here for
+# the in-cluster Kafka/Strimzi demo path).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-kafka
+  namespace: scalecart-prod
+spec:
+  podSelector:
+    matchLabels:
+      scalecart.io/kafka-client: "true"
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kafka }
+      ports:
+        - { protocol: TCP, port: 9092 }

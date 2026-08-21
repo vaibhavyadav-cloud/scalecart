@@ -1,0 +1,53 @@
+namespace: scalecart-prod
+tier: frontend
+port: 8080
+metricsPath: /metrics   # nginx doesn't expose Prometheus metrics in this project - annotation is a harmless no-op here
+
+image:
+  repository: ghcr.io/scalecart/frontend
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 3
+priorityClassName: scalecart-standard
+terminationGracePeriodSeconds: 15
+topologySpread: true
+writableTmp: true
+kafkaClient: false
+hasSecrets: false
+
+initContainer:
+  enabled: false
+
+startupProbe:
+  enabled: false
+livenessProbe:
+  path: /healthz
+readinessProbe:
+  path: /healthz
+
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { cpu: 200m, memory: 128Mi }
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 15
+  targetCPUUtilizationPercentage: 70
+
+pdb:
+  minAvailable: 2
+
+serviceAccount:
+  irsaRoleArn: ""
+
+env: {}
+
+extraVolumes:
+  - { name: nginx-cache, emptyDir: {} }
+  - { name: nginx-run, emptyDir: {} }
+
+extraVolumeMounts:
+  - { name: nginx-cache, mountPath: /var/cache/nginx }
+  - { name: nginx-run, mountPath: /var/run }

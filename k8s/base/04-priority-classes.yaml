@@ -1,0 +1,30 @@
+# PriorityClass influences two things under pressure: (1) the scheduler
+# prefers to place higher-priority pods first, and (2) if the cluster runs
+# out of room, the scheduler can PREEMPT (evict) lower-priority pods to
+# make room for higher-priority ones. payment-service and order-service
+# are marked critical because losing them mid-incident directly loses
+# revenue; notification-service is explicitly low-priority because a
+# delayed email is an acceptable degradation under load.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: scalecart-critical
+value: 1000000
+globalDefault: false
+description: "Revenue-critical services: order-service, payment-service, auth-service"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: scalecart-standard
+value: 100000
+globalDefault: true
+description: "Default priority for most ScaleCart services"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: scalecart-best-effort
+value: 1000
+globalDefault: false
+description: "Degradable services: notification-service"

@@ -1,0 +1,68 @@
+# AuthorizationPolicy is the fine-grained companion to the NetworkPolicies
+# in k8s/base/02-network-policies.yaml. NetworkPolicy only knows IP/port;
+# AuthorizationPolicy uses the mTLS-verified SPIFFE identity
+# (cluster.local/ns/scalecart-prod/sa/<name>) from PeerAuthentication, so
+# it can express "only the pod running as the order-service
+# ServiceAccount may call this endpoint" - something NetworkPolicy
+# fundamentally cannot express. Default-deny here too: no rule = no access.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all-by-default
+  namespace: scalecart-prod
+spec: {}   # empty spec + no action = deny everything not explicitly allowed below
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-gateway
+  namespace: scalecart-prod
+spec:
+  selector:
+    matchLabels: { tier: frontend }
+  action: ALLOW
+  rules:
+    - from:
+        - source: { namespaces: ["istio-system"] }
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-frontend-and-gateway-to-backends
+  namespace: scalecart-prod
+spec:
+  selector:
+    matchLabels: { tier: backend }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["istio-system"]
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/scalecart-prod/sa/frontend"
+---
+# Only order-service is allowed to call product-service's stock-reservation
+# endpoint - cart-service or payment-service calling it directly would be
+# a bug (or an attacker) and is rejected at the mesh level, not just by
+# convention.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: product-service-reserve-restricted
+  namespace: scalecart-prod
+spec:
+  selector:
+    matchLabels: { app: product-service }
+  action: ALLOW
+  rules:
+    - from:
+        - source: { namespaces: ["istio-system"] }
+      to:
+        - operation: { methods: ["GET"], paths: ["/products", "/products/*"] }
+    - from:
+        - source:
+            principals: ["cluster.local/ns/scalecart-prod/sa/order-service"]
+      to:
+        - operation: { methods: ["POST"], paths: ["/products/*/reserve"] }

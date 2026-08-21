@@ -1,0 +1,17 @@
+name: CI - auth-service
+
+on:
+  push:
+    branches: [main]
+    paths: ["services/auth-service/**"]
+  pull_request:
+    paths: ["services/auth-service/**"]
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-scan-push.yml
+    with:
+      service_name: auth-service
+      service_path: services/auth-service
+      language: node
+    secrets: inherit

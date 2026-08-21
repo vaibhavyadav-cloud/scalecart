@@ -1,0 +1,26 @@
+# The Strimzi Kafka cluster + topic definitions are plain k8s manifests
+# (k8s/kafka/), not a Helm chart - ArgoCD deploys a directory of raw YAML
+# just as happily as a Helm chart, which this Application demonstrates.
+# This is only relevant to the in-cluster demo path (docs/08); the
+# production path points services at Amazon MSK instead and this
+# Application simply isn't part of that environment's Applications.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: scalecart-kafka
+  namespace: argocd
+spec:
+  project: scalecart
+  source:
+    repoURL: "https://github.com/scalecart/scalecart.git"
+    targetRevision: main
+    path: k8s/kafka
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: kafka
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

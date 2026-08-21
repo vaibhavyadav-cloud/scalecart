@@ -1,0 +1,125 @@
+# Separate from the 7 service pipelines on purpose: infrastructure changes
+# (a new RDS instance, a changed node group size) have a different blast
+# radius and review process than an application code change, and mixing
+# them into one pipeline makes it hard to reason about "what actually
+# needs a human's sign-off before it touches the cloud account." See
+# docs/12-terraform-iac.md.
+name: Terraform
+
+on:
+  pull_request:
+    paths: ["terraform/**"]
+  push:
+    branches: [main]
+    paths: ["terraform/**"]
+
+env:
+  TF_VERSION: "1.9.0"
+  AWS_REGION: "us-east-1"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [dev, prod]
+    defaults:
+      run:
+        working-directory: terraform/envs/${{ matrix.env }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "${{ env.TF_VERSION }}" }
+
+      - name: terraform fmt (check only, never auto-fixes in CI)
+        run: terraform fmt -check -recursive
+      - name: terraform init (no backend - validate doesn't need real state)
+        run: terraform init -backend=false
+      - name: terraform validate
+        run: terraform validate
+
+      - name: tflint
+        uses: terraform-linters/setup-tflint@v4
+      - run: tflint --init && tflint -f compact
+        working-directory: terraform/envs/${{ matrix.env }}
+
+      # Policy-as-code: catches things `terraform validate` can't, like
+      # "this S3 bucket has no encryption" or "this security group allows
+      # 0.0.0.0/0 on port 22" - before it ever reaches `terraform plan`
+      # against a real AWS account.
+      - name: Checkov (IaC security scan)
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: terraform/envs/${{ matrix.env }}
+          quiet: true
+          soft_fail: false
+
+  plan:
+    needs: validate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [dev, prod]
+    defaults:
+      run:
+        working-directory: terraform/envs/${{ matrix.env }}
+    permissions:
+      pull-requests: write
+      id-token: write     # OIDC federation to AWS - no long-lived AWS keys stored in GitHub
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.TERRAFORM_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "${{ env.TF_VERSION }}" }
+      - run: terraform init
+      - id: plan
+        run: terraform plan -no-color -out=tfplan | tee plan-output.txt
+        continue-on-error: true
+      # Posts the plan output as a PR comment so a human reviews EXACTLY
+      # what will change before approving - not just the code diff.
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('terraform/envs/${{ matrix.env }}/plan-output.txt', 'utf8').slice(0, 60000);
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `#### Terraform Plan - \`${{ matrix.env }}\`\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>`
+            });
+
+  apply:
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [dev, prod]
+      max-parallel: 1   # dev applies before prod ever gets a chance to, never in parallel with it
+    # `environment:` gates this job behind GitHub's required-reviewers
+    # protection rule (configured in repo Settings -> Environments) - the
+    # job LITERALLY pauses here until an approver clicks approve, for the
+    # prod environment specifically.
+    environment: ${{ matrix.env }}
+    defaults:
+      run:
+        working-directory: terraform/envs/${{ matrix.env }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.TERRAFORM_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "${{ env.TF_VERSION }}" }
+      - run: terraform init
+      - run: terraform apply -auto-approve

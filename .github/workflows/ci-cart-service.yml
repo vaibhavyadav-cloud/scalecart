@@ -1,0 +1,17 @@
+name: CI - cart-service
+
+on:
+  push:
+    branches: [main]
+    paths: ["services/cart-service/**"]
+  pull_request:
+    paths: ["services/cart-service/**"]
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-scan-push.yml
+    with:
+      service_name: cart-service
+      service_path: services/cart-service
+      language: python
+    secrets: inherit

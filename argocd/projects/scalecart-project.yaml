@@ -1,0 +1,45 @@
+# AppProject scopes what any Application inside it is ALLOWED to do -
+# without this, ArgoCD's default "default" project lets any Application
+# deploy any resource kind to any namespace from any repo. This one
+# restricts ScaleCart deployments to this one git repo, the 3 scalecart-*
+# namespaces, and a specific allow-list of resource kinds - a compromised
+# or misconfigured Application manifest can't, for example, deploy a
+# ClusterRoleBinding or reach into kube-system.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: scalecart
+  namespace: argocd
+spec:
+  description: ScaleCart platform - all environments
+  sourceRepos:
+    - "https://github.com/scalecart/scalecart.git"
+  destinations:
+    - { server: "https://kubernetes.default.svc", namespace: "scalecart-dev" }
+    - { server: "https://kubernetes.default.svc", namespace: "scalecart-staging" }
+    - { server: "https://kubernetes.default.svc", namespace: "scalecart-prod" }
+  clusterResourceWhitelist:
+    - { group: "", kind: "Namespace" }
+  namespaceResourceWhitelist:
+    - { group: "apps", kind: "Deployment" }
+    - { group: "", kind: "Service" }
+    - { group: "", kind: "ConfigMap" }
+    - { group: "", kind: "Secret" }
+    - { group: "", kind: "ServiceAccount" }
+    - { group: "batch", kind: "Job" }
+    - { group: "batch", kind: "CronJob" }
+    - { group: "autoscaling", kind: "HorizontalPodAutoscaler" }
+    - { group: "policy", kind: "PodDisruptionBudget" }
+    - { group: "networking.istio.io", kind: "*" }
+    - { group: "security.istio.io", kind: "*" }
+    - { group: "keda.sh", kind: "ScaledObject" }
+  roles:
+    - name: readonly
+      description: Read-only access for the whole engineering team
+      policies:
+        - "p, proj:scalecart:readonly, applications, get, scalecart/*, allow"
+    - name: deployer
+      description: CI pipeline identity - allowed to sync, not to delete the project itself
+      policies:
+        - "p, proj:scalecart:deployer, applications, sync, scalecart/*, allow"
+        - "p, proj:scalecart:deployer, applications, get, scalecart/*, allow"

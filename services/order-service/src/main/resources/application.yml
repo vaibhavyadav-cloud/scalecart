@@ -1,0 +1,65 @@
+server:
+  port: 4004
+  shutdown: graceful   # let in-flight requests finish before the JVM exits on SIGTERM
+
+spring:
+  application:
+    name: order-service
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:scalecart_orders}
+    username: ${DB_USER:scalecart}
+    password: ${DB_PASSWORD:scalecart}
+    hikari:
+      # HikariCP pool sized deliberately small per-pod: with N pods behind
+      # the HPA, total connections must stay under the RDS max_connections
+      # limit. See docs/14-scaling-to-1m-users.md for the math + why
+      # PgBouncer sits in front of RDS in production.
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 3000
+  jpa:
+    hibernate:
+      ddl-auto: validate   # schema changes only happen via Flyway migrations, never Hibernate auto-DDL
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 20
+    open-in-view: false
+  flyway:
+    locations: classpath:db/migration
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all              # wait for all in-sync replicas - correctness over latency for order events
+      retries: 5
+      properties:
+        enable.idempotence: true   # prevents duplicate order.created events on producer retry
+
+# Fail-fast: if a required property is missing at startup, crash immediately
+# instead of failing mysteriously on the first request in production.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true    # exposes /actuator/health/liveness and /actuator/health/readiness separately
+      show-details: never
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  pattern:
+    console: "%d{ISO8601} %-5level [%thread] %logger{36} - %msg %mdc%n"

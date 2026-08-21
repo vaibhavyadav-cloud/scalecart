@@ -1,0 +1,14 @@
+# STRICT mTLS mesh-wide: every pod-to-pod connection inside scalecart-prod
+# must present a valid mTLS certificate issued by Istio's own CA (rotated
+# automatically, no manual cert management). Plaintext connections between
+# mesh pods are rejected outright - this is what makes "the network
+# between my services is trusted" an enforced guarantee instead of an
+# assumption. See docs/07-istio-service-mesh.md.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: scalecart-prod
+spec:
+  mtls:
+    mode: STRICT

@@ -1,0 +1,41 @@
+# This VirtualService plays the "API gateway" role: one external hostname,
+# path-based routing fans out to each backend service. It's also where
+# per-route resilience policy lives (timeout, retries) - these are mesh
+# concerns, not application code, which is why none of the 7 services
+# implement their own retry logic against each other.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: scalecart-routes
+  namespace: scalecart-prod
+spec:
+  hosts: ["scalecart.example.com"]
+  gateways: ["scalecart-gateway"]
+  http:
+    - match: [{ uri: { prefix: /auth } }]
+      route: [{ destination: { host: auth-service, port: { number: 4001 } } }]
+      timeout: 5s
+      retries: { attempts: 2, perTryTimeout: 2s, retryOn: "5xx,reset,connect-failure" }
+
+    - match: [{ uri: { prefix: /products } }]
+      route: [{ destination: { host: product-service, port: { number: 4002 } } }]
+      timeout: 3s
+      retries: { attempts: 3, perTryTimeout: 1s, retryOn: "5xx,reset,connect-failure" }
+
+    - match: [{ uri: { prefix: /cart } }]
+      route: [{ destination: { host: cart-service, port: { number: 4003 } } }]
+      timeout: 2s
+      retries: { attempts: 2, perTryTimeout: 1s, retryOn: "5xx,reset,connect-failure" }
+
+    - match: [{ uri: { prefix: /orders } }]
+      route: [{ destination: { host: order-service, port: { number: 4004 } } }]
+      timeout: 8s   # includes the synchronous product-service stock-reservation call, so this needs more headroom
+      retries: { attempts: 1, perTryTimeout: 6s, retryOn: "reset,connect-failure" }   # order creation is NOT safe to blindly retry on 5xx (could double-create) - see docs/07-istio-service-mesh.md
+
+    - match: [{ uri: { prefix: /payments } }]
+      route: [{ destination: { host: payment-service, port: { number: 4005 } } }]
+      timeout: 5s
+
+    - match: [{ uri: { prefix: / } }]
+      route: [{ destination: { host: frontend, port: { number: 8080 } } }]
+      timeout: 10s

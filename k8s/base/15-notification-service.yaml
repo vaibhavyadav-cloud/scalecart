@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: notification-service
+  namespace: scalecart-prod
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-service-config
+  namespace: scalecart-prod
+data:
+  PORT: "4006"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-bootstrap.kafka.svc.cluster.local:9092"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: scalecart-prod
+  labels: { app: notification-service, tier: backend }
+spec:
+  replicas: 2   # lowest baseline in the platform - pure consumer, no synchronous callers waiting on it
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app: notification-service }
+  template:
+    metadata:
+      labels: { app: notification-service, tier: backend, scalecart.io/kafka-client: "true" }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "4006" }
+    spec:
+      serviceAccountName: notification-service
+      # Lowest priority in the platform - under node pressure, this is the
+      # first workload the scheduler is allowed to evict. A delayed
+      # "order confirmed" email is an acceptable degradation; a dropped
+      # payment or auth request is not.
+      priorityClassName: scalecart-best-effort
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: notification-service
+          image: ghcr.io/scalecart/notification-service:latest
+          ports: [{ containerPort: 4006 }]
+          envFrom:
+            - configMapRef: { name: notification-service-config }
+            - secretRef: { name: notification-service-secrets }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 300m, memory: 256Mi }
+          livenessProbe:
+            httpGet: { path: /health/live, port: 4006 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health/ready, port: 4006 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: scalecart-prod
+spec:
+  selector: { app: notification-service }
+  ports: [{ port: 4006, targetPort: 4006, name: http }]
+---
+# Scaled by KEDA on Kafka lag (k8s/keda/notification-consumer-scaledobject.yaml),
+# not a CPU-based HPA - same reasoning as payment-service.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: notification-service
+  namespace: scalecart-prod
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: notification-service } }

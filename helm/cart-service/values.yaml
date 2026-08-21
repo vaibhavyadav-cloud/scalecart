@@ -1,0 +1,46 @@
+namespace: scalecart-prod
+tier: backend
+port: 4003
+metricsPath: /metrics
+
+image:
+  repository: ghcr.io/scalecart/cart-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 3
+priorityClassName: scalecart-standard
+terminationGracePeriodSeconds: 15
+topologySpread: false
+writableTmp: false
+kafkaClient: false
+hasSecrets: true
+
+initContainer:
+  enabled: false
+
+startupProbe:
+  enabled: false
+livenessProbe:
+  path: /health/live
+readinessProbe:
+  path: /health/ready
+
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { cpu: 400m, memory: 256Mi }
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 25
+  targetCPUUtilizationPercentage: 70
+
+pdb:
+  minAvailable: 2
+
+serviceAccount:
+  irsaRoleArn: ""
+
+env:
+  PORT: "4003"

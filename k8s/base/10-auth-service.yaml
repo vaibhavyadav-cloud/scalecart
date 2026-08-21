@@ -1,0 +1,146 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: auth-service
+  namespace: scalecart-prod
+  # eks.amazonaws.com/role-arn annotation added by Terraform/Ansible
+  # (IRSA) in real clusters - grants this pod AWS permissions (e.g. reading
+  # its own secret from Secrets Manager) without any static AWS key ever
+  # existing anywhere. Left unset here since this base manifest is
+  # cloud-agnostic; see helm/auth-service/values-prod.yaml for the real value.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-service-config
+  namespace: scalecart-prod
+data:
+  PORT: "4001"
+  LOG_LEVEL: "info"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: scalecart-prod
+  labels: { app: auth-service, tier: backend }
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app: auth-service }
+  template:
+    metadata:
+      labels: { app: auth-service, tier: backend, scalecart.io/kafka-client: "false" }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4001"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: auth-service
+      priorityClassName: scalecart-critical
+      terminationGracePeriodSeconds: 30   # gives SIGTERM handler (src/index.ts) time to drain in-flight requests
+      # Spreads the 3 replicas across availability zones so a single AZ
+      # outage doesn't take down every replica of this service at once.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app: auth-service }
+      initContainers:
+        # Runs Prisma's versioned SQL migrations before the app starts -
+        # separating "change the schema" from "run the app" means a
+        # migration only executes once per rollout, not once per pod
+        # replica racing each other. See docs/06-kubernetes-advanced.md.
+        - name: db-migrate
+          image: ghcr.io/scalecart/auth-service:latest
+          command: ["npx", "prisma", "migrate", "deploy"]
+          envFrom:
+            - secretRef: { name: auth-service-secrets }
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      containers:
+        - name: auth-service
+          image: ghcr.io/scalecart/auth-service:latest
+          ports: [{ containerPort: 4001 }]
+          envFrom:
+            - configMapRef: { name: auth-service-config }
+            - secretRef: { name: auth-service-secrets }   # populated by External Secrets Operator
+          resources:
+            requests: { cpu: 150m, memory: 192Mi }
+            limits: { cpu: 500m, memory: 384Mi }
+          # Liveness never depends on Postgres (see docs/02) - only readiness does.
+          livenessProbe:
+            httpGet: { path: /health/live, port: 4001 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health/ready, port: 4001 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }   # writable scratch dir, since the root fs is read-only
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: scalecart-prod
+  labels: { app: auth-service }
+spec:
+  selector: { app: auth-service }
+  ports:
+    - { port: 4001, targetPort: 4001, name: http }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: auth-service
+  namespace: scalecart-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: auth-service
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }
+    - type: Resource
+      resource: { name: memory, target: { type: Utilization, averageUtilization: 75 } }
+  behavior:
+    # Scale up fast (traffic spikes matter), scale down slowly (avoid
+    # flapping pods up/down on noisy short-lived dips).
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies: [{ type: Percent, value: 100, periodSeconds: 60 }]
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies: [{ type: Percent, value: 25, periodSeconds: 60 }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service
+  namespace: scalecart-prod
+spec:
+  # Guarantees at least 2 of 3+ replicas stay up during voluntary
+  # disruptions (node drains during a cluster upgrade, Karpenter
+  # consolidation) - without this, a node drain could take every replica
+  # down at once if they happened to be co-located.
+  minAvailable: 2
+  selector:
+    matchLabels: { app: auth-service }

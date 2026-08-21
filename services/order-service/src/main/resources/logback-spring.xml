@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- JSON logs so Fluent Bit / CloudWatch in the cluster can parse fields
+         instead of regexing plain text - same reasoning documented for the
+         Node/Go/Python services. requestId comes from MDC (set by
+         RequestIdFilter) so every log line in a request's lifecycle can be
+         correlated by grepping one field in Grafana Loki / CloudWatch Insights. -->
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"service":"order-service"}</customFields>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="JSON"/>
+    </root>
+</configuration>

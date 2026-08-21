@@ -1,0 +1,57 @@
+# ArgoCD sync hook: this Job runs and must complete successfully BEFORE
+# ArgoCD applies the rest of this chart's resources (the Deployment) on a
+# sync. That guarantees new order-service pods never start against a
+# schema that hasn't been migrated yet - a slightly stronger ordering
+# guarantee than "migrate in an initContainer," which only runs
+# per-pod, after the Deployment object has already been updated.
+# order-service ALSO runs Flyway automatically on boot (belt-and-suspenders
+# - see the comment in V1__create_orders_table.sql); Flyway's own
+# advisory locking makes running it twice (here and on boot) safe.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: order-service-migrate
+  namespace: {{ .Values.namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 180
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: flyway-migrate
+          image: flyway/flyway:10-alpine
+          args:
+            - -url=jdbc:postgresql://$(DB_HOST):5432/$(DB_NAME)
+            - -user=$(DB_USER)
+            - -password=$(DB_PASSWORD)
+            - -locations=filesystem:/flyway/sql
+            - migrate
+          envFrom:
+            - configMapRef: { name: {{ include "common.fullname" . }}-config }
+            - secretRef: { name: {{ include "common.fullname" . }}-secrets }
+          volumeMounts:
+            - { name: migrations, mountPath: /flyway/sql }
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      volumes:
+        - name: migrations
+          configMap:
+            name: order-service-migrations
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-service-migrations
+  namespace: {{ .Values.namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+data:
+{{ (.Files.Glob "files/migrations/*.sql").AsConfig | indent 2 }}

@@ -1,0 +1,69 @@
+# Dev environment overrides, layered on top of values.yaml. Every key here
+# nests under the subchart's name (matching Chart.yaml's dependency name),
+# which is Helm's standard mechanism for an umbrella chart to override a
+# subchart's own values.yaml - see docs/09-helm-charts.md.
+#
+# Shape of the change, dev vs prod: fewer replicas (cost), autoscaling
+# disabled (predictable, cheap, no need to prove HPA works on every push),
+# :dev image tags, and every service pointed at the scalecart-dev namespace.
+
+auth-service:
+  namespace: scalecart-dev
+  replicaCount: 1
+  image: { tag: dev }
+  autoscaling: { enabled: false }
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { cpu: 200m, memory: 192Mi }
+  pdb: { minAvailable: 0 }
+
+product-service:
+  namespace: scalecart-dev
+  replicaCount: 1
+  image: { tag: dev }
+  autoscaling: { enabled: false }
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+  pdb: { minAvailable: 0 }
+
+cart-service:
+  namespace: scalecart-dev
+  replicaCount: 1
+  image: { tag: dev }
+  autoscaling: { enabled: false }
+  pdb: { minAvailable: 0 }
+
+order-service:
+  namespace: scalecart-dev
+  replicaCount: 1
+  image: { tag: dev }
+  autoscaling: { enabled: false }
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  pdb: { minAvailable: 0 }
+  env:
+    DB_HOST: order-postgres.scalecart-dev.svc.cluster.local
+    DB_NAME: scalecart_orders
+    KAFKA_BOOTSTRAP_SERVERS: kafka-bootstrap.kafka.svc.cluster.local:9092
+    PRODUCT_SERVICE_URL: http://product-service.scalecart-dev.svc.cluster.local:4002
+
+payment-service:
+  namespace: scalecart-dev
+  replicaCount: 1
+  image: { tag: dev }
+  pdb: { minAvailable: 0 }
+
+notification-service:
+  namespace: scalecart-dev
+  replicaCount: 1
+  image: { tag: dev }
+  pdb: { minAvailable: 0 }
+
+frontend:
+  namespace: scalecart-dev
+  replicaCount: 1
+  image: { tag: dev }
+  autoscaling: { enabled: false }
+  pdb: { minAvailable: 0 }

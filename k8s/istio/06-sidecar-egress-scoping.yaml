@@ -1,0 +1,45 @@
+# Without a Sidecar resource, every Envoy proxy in the mesh holds a full
+# routing table for EVERY service in EVERY namespace it can see - fine at
+# 7 services, but that config-propagation cost grows with cluster size
+# and is a real istiod CPU/memory cost at scale. Scoping each service's
+# sidecar to only the namespaces/hosts it actually calls keeps istiod's
+# push cost roughly constant as the platform grows. See docs/07-istio-service-mesh.md.
+apiVersion: networking.istio.io/v1
+kind: Sidecar
+metadata:
+  name: order-service-egress
+  namespace: scalecart-prod
+spec:
+  workloadSelector:
+    labels: { app: order-service }
+  egress:
+    - hosts:
+        - "scalecart-prod/product-service.scalecart-prod.svc.cluster.local"
+        - "kafka/*"
+        - "istio-system/*"
+---
+apiVersion: networking.istio.io/v1
+kind: Sidecar
+metadata:
+  name: payment-service-egress
+  namespace: scalecart-prod
+spec:
+  workloadSelector:
+    labels: { app: payment-service }
+  egress:
+    - hosts:
+        - "kafka/*"
+        - "istio-system/*"
+---
+apiVersion: networking.istio.io/v1
+kind: Sidecar
+metadata:
+  name: notification-service-egress
+  namespace: scalecart-prod
+spec:
+  workloadSelector:
+    labels: { app: notification-service }
+  egress:
+    - hosts:
+        - "kafka/*"
+        - "istio-system/*"

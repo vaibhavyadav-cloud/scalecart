@@ -1,0 +1,48 @@
+namespace: scalecart-prod
+tier: backend
+port: 4005
+metricsPath: /metrics
+
+image:
+  repository: ghcr.io/scalecart/payment-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 3
+priorityClassName: scalecart-critical
+terminationGracePeriodSeconds: 30
+topologySpread: true
+writableTmp: true
+kafkaClient: true
+hasSecrets: true
+
+initContainer:
+  enabled: true
+  command: ["npx", "prisma", "migrate", "deploy"]
+
+startupProbe:
+  enabled: false
+livenessProbe:
+  path: /health/live
+readinessProbe:
+  path: /health/ready
+
+resources:
+  requests: { cpu: 150m, memory: 192Mi }
+  limits: { cpu: 500m, memory: 384Mi }
+
+# Scaled by KEDA on Kafka consumer lag, not CPU - see k8s/keda/payment-consumer-scaledobject.yaml.
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 20
+
+pdb:
+  minAvailable: 2
+
+serviceAccount:
+  irsaRoleArn: ""
+
+env:
+  PORT: "4005"
+  KAFKA_BOOTSTRAP_SERVERS: kafka-bootstrap.kafka.svc.cluster.local:9092

@@ -1,0 +1,23 @@
+# The single external entry point into the mesh. In AWS this Gateway's
+# istio-ingressgateway Service is of type LoadBalancer, provisioned by the
+# AWS Load Balancer Controller as an ALB/NLB (installed by
+# ansible/playbooks/01-install-cluster-addons.yml) - everything after this
+# point is internal, mTLS-encrypted mesh traffic.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: scalecart-gateway
+  namespace: scalecart-prod
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port: { number: 443, name: https, protocol: HTTPS }
+      tls:
+        mode: SIMPLE
+        credentialName: scalecart-tls-cert   # references a k8s TLS Secret, e.g. from cert-manager/ACM
+      hosts: ["scalecart.example.com"]
+    - port: { number: 80, name: http, protocol: HTTP }
+      tls:
+        httpsRedirect: true   # plain HTTP is only ever used to bounce to HTTPS
+      hosts: ["scalecart.example.com"]

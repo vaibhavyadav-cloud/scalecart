@@ -1,0 +1,47 @@
+# Strimzi (installed by ansible/playbooks/01-install-cluster-addons.yml)
+# turns "run Kafka" into a Kubernetes-native CRD instead of a hand-rolled
+# StatefulSet - this is the in-cluster path used for the K8s/Helm demo so
+# the whole platform is runnable without an AWS account. In the documented
+# production path, this Kafka CR is skipped entirely and every service's
+# KAFKA_BOOTSTRAP_SERVERS instead points at Amazon MSK
+# (terraform/modules/msk) - the services themselves don't know or care
+# which one is real, they just speak the Kafka protocol. See
+# docs/08-kafka-event-driven.md.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: scalecart-kafka
+  namespace: kafka
+spec:
+  kafka:
+    version: 3.7.0
+    replicas: 3
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+    config:
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      default.replication.factor: 3
+      min.insync.replicas: 2
+    resources:
+      requests: { cpu: 500m, memory: 1Gi }
+      limits: { cpu: "2", memory: 2Gi }
+    storage:
+      type: jbod
+      volumes:
+        - id: 0
+          type: persistent-claim
+          size: 20Gi
+          deleteClaim: false
+  kraft: {}
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}

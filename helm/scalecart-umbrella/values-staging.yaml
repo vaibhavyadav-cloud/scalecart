@@ -1,0 +1,56 @@
+# Staging: same topology shape as prod (autoscaling on, PDBs enforced,
+# multi-replica) but at roughly half the floor/ceiling, and its own
+# namespace + image tag - this is what actually catches "works with 1
+# replica, breaks with 3" bugs before they reach prod. See docs/09-helm-charts.md.
+
+auth-service:
+  namespace: scalecart-staging
+  replicaCount: 2
+  image: { tag: staging }
+  autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 6 }
+  pdb: { minAvailable: 1 }
+
+product-service:
+  namespace: scalecart-staging
+  replicaCount: 2
+  image: { tag: staging }
+  autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 10 }
+  pdb: { minAvailable: 1 }
+
+cart-service:
+  namespace: scalecart-staging
+  replicaCount: 2
+  image: { tag: staging }
+  autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 6 }
+  pdb: { minAvailable: 1 }
+
+order-service:
+  namespace: scalecart-staging
+  replicaCount: 2
+  image: { tag: staging }
+  autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 5 }
+  pdb: { minAvailable: 1 }
+  env:
+    DB_HOST: order-postgres.scalecart-staging.svc.cluster.local
+    DB_NAME: scalecart_orders
+    KAFKA_BOOTSTRAP_SERVERS: kafka-bootstrap.kafka.svc.cluster.local:9092
+    PRODUCT_SERVICE_URL: http://product-service.scalecart-staging.svc.cluster.local:4002
+
+payment-service:
+  namespace: scalecart-staging
+  replicaCount: 2
+  image: { tag: staging }
+  pdb: { minAvailable: 1 }
+
+notification-service:
+  namespace: scalecart-staging
+  replicaCount: 1
+  image: { tag: staging }
+  pdb: { minAvailable: 0 }
+
+frontend:
+  namespace: scalecart-staging
+  replicaCount: 2
+  image: { tag: staging }
+  autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 6 }
+  pdb: { minAvailable: 1 }

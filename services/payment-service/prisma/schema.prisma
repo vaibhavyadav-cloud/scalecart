@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Payment {
+  id           String   @id @default(uuid())
+  orderId      String   @unique
+  userId       String
+  amountCents  BigInt
+  currency     String   @default("USD")
+  status       String   // AUTHORIZED | CAPTURED | FAILED
+  createdAt    DateTime @default(now())
+
+  @@map("payments")
+}
+
+// Tracks Kafka event IDs already processed, so a redelivered message
+// (Kafka only guarantees at-least-once delivery) is a safe no-op instead
+// of double-charging a customer. See docs/08-kafka-event-driven.md.
+model ProcessedEvent {
+  eventId     String   @id
+  processedAt DateTime @default(now())
+
+  @@map("processed_events")
+}

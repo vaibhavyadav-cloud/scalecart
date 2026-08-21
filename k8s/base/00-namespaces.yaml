@@ -1,0 +1,30 @@
+# One namespace per environment for the application workloads, plus the
+# platform namespaces created by their respective installs (istio-system,
+# argocd, kafka, keda, monitoring - see docs/17-local-quickstart.md for
+# the install order). Namespace-per-env (rather than a single namespace
+# with name suffixes like "order-service-prod") is what lets ResourceQuota,
+# NetworkPolicy, and Istio's PeerAuthentication all be scoped cleanly per
+# environment.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scalecart-dev
+  labels:
+    istio-injection: enabled   # pods here automatically get an Envoy sidecar injected
+    environment: dev
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scalecart-staging
+  labels:
+    istio-injection: enabled
+    environment: staging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scalecart-prod
+  labels:
+    istio-injection: enabled
+    environment: prod

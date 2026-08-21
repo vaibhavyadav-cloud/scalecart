@@ -1,0 +1,25 @@
+# Same pattern as payment-service, but a much higher lag threshold and
+# lower ceiling: a delayed notification email is an acceptable
+# degradation (see the scalecart-best-effort PriorityClass on this
+# Deployment), so this service is deliberately slower to scale out than
+# the revenue-critical payment consumer above.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: notification-service-consumer
+  namespace: scalecart-prod
+spec:
+  scaleTargetRef:
+    name: notification-service
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  cooldownPeriod: 180
+  pollingInterval: 20
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka-bootstrap.kafka.svc.cluster.local:9092
+        consumerGroup: notification-service-group
+        topic: payment.completed
+        lagThreshold: "200"
+        activationLagThreshold: "10"

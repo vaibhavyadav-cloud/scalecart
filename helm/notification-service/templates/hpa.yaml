@@ -1,0 +1,2 @@
+{{ include "common.hpa" . }}
+{{/* autoscaling.enabled=false - scaled by KEDA instead, see k8s/keda/notification-consumer-scaledobject.yaml */}}

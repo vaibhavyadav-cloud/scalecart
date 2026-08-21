@@ -1,0 +1,17 @@
+name: CI - order-service
+
+on:
+  push:
+    branches: [main]
+    paths: ["services/order-service/**"]
+  pull_request:
+    paths: ["services/order-service/**"]
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-scan-push.yml
+    with:
+      service_name: order-service
+      service_path: services/order-service
+      language: java
+    secrets: inherit

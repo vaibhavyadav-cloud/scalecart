@@ -1,0 +1,35 @@
+# Cluster/namespace-level platform resources for scalecart-prod:
+# ResourceQuota, NetworkPolicy, PriorityClass, ExternalSecrets, the
+# CronJob, and every Istio mesh resource (mTLS mode, routing, circuit
+# breaking, authorization policies). These are deliberately a SEPARATE
+# Application from the per-service umbrella chart (scalecart-prod, from
+# the ApplicationSet) - platform/security policy and application
+# deployments have different owners and different risk profiles in a
+# real org, and splitting them means a platform-team change can't
+# accidentally get bundled into an app-team's deploy (or vice versa).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: scalecart-platform-prod
+  namespace: argocd
+spec:
+  project: scalecart
+  sources:
+    - repoURL: "https://github.com/scalecart/scalecart.git"
+      targetRevision: main
+      path: k8s/base
+    - repoURL: "https://github.com/scalecart/scalecart.git"
+      targetRevision: main
+      path: k8s/istio
+    - repoURL: "https://github.com/scalecart/scalecart.git"
+      targetRevision: main
+      path: k8s/keda
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: scalecart-prod
+  syncPolicy:
+    automated:
+      prune: false   # deleting a NetworkPolicy/AuthorizationPolicy by accident is high-blast-radius - require a human `argocd app sync` after reviewing the diff
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

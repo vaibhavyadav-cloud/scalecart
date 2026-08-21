@@ -1,0 +1,44 @@
+# Belt-and-suspenders sweep: cart-service already sets a 7-day TTL on
+# every Redis cart key (see services/cart-service/app/routers/cart.py), so
+# this CronJob should normally find nothing to do. It exists to catch
+# carts written by a future code path that forgets to set the TTL -
+# cheap insurance against a slow, silent Redis memory leak.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cart-cleanup
+  namespace: scalecart-prod
+spec:
+  schedule: "0 3 * * *"   # 03:00 UTC daily - off-peak for this platform's assumed traffic pattern
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 300
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: cart-cleanup
+              image: redis:7-alpine
+              command:
+                - sh
+                - -c
+                - |
+                  redis-cli -h redis -p 6379 --scan --pattern 'cart:*' | while read -r key; do
+                    ttl=$(redis-cli -h redis -p 6379 TTL "$key")
+                    if [ "$ttl" = "-1" ]; then
+                      echo "removing cart key with no TTL: $key"
+                      redis-cli -h redis -p 6379 DEL "$key"
+                    fi
+                  done
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 999
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+              resources:
+                requests: { cpu: 50m, memory: 32Mi }
+                limits: { cpu: 200m, memory: 64Mi }

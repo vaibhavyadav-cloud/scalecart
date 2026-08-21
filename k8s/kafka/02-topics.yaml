@@ -1,0 +1,62 @@
+# Declared here as KafkaTopic CRDs (Strimzi's Topic Operator reconciles
+# these into real Kafka topics) so topic config is reviewed via PR like
+# everything else, rather than someone running kafka-topics.sh by hand
+# once and nobody remembering the partition count later. order-service
+# also declares these same topics via Spring's KafkaAdmin at startup
+# (see KafkaTopicConfig.java) - the two are idempotent with each other,
+# whichever applies first wins and the other is a no-op.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: order.created
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: scalecart-kafka
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    retention.ms: "604800000"   # 7 days
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: order.cancelled
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: scalecart-kafka
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: payment.completed
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: scalecart-kafka
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    min.insync.replicas: 2
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: payment.failed
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: scalecart-kafka
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    min.insync.replicas: 2

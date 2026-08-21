@@ -1,0 +1,12 @@
+# Base values = production shape. values-dev.yaml / values-staging.yaml
+# are applied ON TOP of this file with `-f values.yaml -f values-dev.yaml`
+# (Helm merges left-to-right, later files win) - see docs/09-helm-charts.md
+# and argocd/apps/*.yaml for exactly how each environment's ArgoCD
+# Application wires this up.
+authService: { enabled: true }
+productService: { enabled: true }
+cartService: { enabled: true }
+orderService: { enabled: true }
+paymentService: { enabled: true }
+notificationService: { enabled: true }
+frontend: { enabled: true }

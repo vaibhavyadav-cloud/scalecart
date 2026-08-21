@@ -1,0 +1,17 @@
+name: CI - product-service
+
+on:
+  push:
+    branches: [main]
+    paths: ["services/product-service/**"]
+  pull_request:
+    paths: ["services/product-service/**"]
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-scan-push.yml
+    with:
+      service_name: product-service
+      service_path: services/product-service
+      language: go
+    secrets: inherit

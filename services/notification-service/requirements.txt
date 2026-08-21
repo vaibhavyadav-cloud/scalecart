@@ -1,0 +1,6 @@
+fastapi==0.112.0
+uvicorn[standard]==0.30.5
+aiokafka==0.11.0
+redis==5.0.8
+prometheus-fastapi-instrumentator==7.0.0
+python-json-logger==2.0.7

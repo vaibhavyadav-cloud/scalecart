@@ -1,0 +1,52 @@
+namespace: scalecart-prod
+tier: backend
+port: 4004
+metricsPath: /actuator/prometheus
+
+image:
+  repository: ghcr.io/scalecart/order-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 3
+priorityClassName: scalecart-critical
+terminationGracePeriodSeconds: 45   # JVM needs longer to drain than Node/Go
+topologySpread: true
+writableTmp: true
+kafkaClient: true
+hasSecrets: true
+
+initContainer:
+  enabled: false   # order-service migrates itself via Spring Boot's Flyway integration on boot - see docs/06-kubernetes-advanced.md
+
+startupProbe:
+  enabled: true
+  path: /actuator/health/liveness
+  failureThreshold: 30
+  periodSeconds: 2
+livenessProbe:
+  path: /actuator/health/liveness
+readinessProbe:
+  path: /actuator/health/readiness
+
+resources:
+  requests: { cpu: 300m, memory: 512Mi }
+  limits: { cpu: "1", memory: 768Mi }
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 15
+  targetCPUUtilizationPercentage: 65
+
+pdb:
+  minAvailable: 2
+
+serviceAccount:
+  irsaRoleArn: ""
+
+env:
+  DB_HOST: order-postgres.scalecart-prod.svc.cluster.local
+  DB_NAME: scalecart_orders
+  KAFKA_BOOTSTRAP_SERVERS: kafka-bootstrap.kafka.svc.cluster.local:9092
+  PRODUCT_SERVICE_URL: http://product-service.scalecart-prod.svc.cluster.local:4002

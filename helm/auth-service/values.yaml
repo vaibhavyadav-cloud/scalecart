@@ -1,0 +1,52 @@
+# Defaults here mirror the prod topology; helm/scalecart-umbrella's
+# values-dev.yaml / values-staging.yaml override the fields that should
+# differ per environment (replica counts, resource sizing) - see
+# docs/09-helm-charts.md for the override mechanism.
+namespace: scalecart-prod
+tier: backend
+port: 4001
+metricsPath: /metrics
+
+image:
+  repository: ghcr.io/scalecart/auth-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 3
+priorityClassName: scalecart-critical
+terminationGracePeriodSeconds: 30
+topologySpread: true
+writableTmp: true
+kafkaClient: false
+hasSecrets: true
+
+initContainer:
+  enabled: true
+  command: ["npx", "prisma", "migrate", "deploy"]
+
+startupProbe:
+  enabled: false
+livenessProbe:
+  path: /health/live
+readinessProbe:
+  path: /health/ready
+
+resources:
+  requests: { cpu: 150m, memory: 192Mi }
+  limits: { cpu: 500m, memory: 384Mi }
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 65
+
+pdb:
+  minAvailable: 2
+
+serviceAccount:
+  irsaRoleArn: ""   # set per-env in umbrella values-prod.yaml, populated from terraform output
+
+env:
+  PORT: "4001"
+  LOG_LEVEL: info

@@ -1,0 +1,63 @@
+# ApplicationSet's list generator turns this one manifest into 3 real
+# ArgoCD Applications (scalecart-dev, scalecart-staging, scalecart-prod) -
+# adding a 4th environment later is one more list entry, not a new file.
+# Each generated Application deploys the SAME umbrella chart
+# (helm/scalecart-umbrella) with a DIFFERENT values file layered on top,
+# which is exactly the mechanism described in docs/09-helm-charts.md.
+#
+# Sync policy differs deliberately by environment: dev/staging are fully
+# automated (every merge to main deploys immediately - fast feedback,
+# low blast radius). prod has automated=false on purpose - promotion to
+# prod is a deliberate `argocd app sync scalecart-prod`
+# (or a manual click in the UI) after verifying staging, not an automatic
+# consequence of a merge. See docs/10-argocd-gitops.md for the full
+# promotion flow.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: scalecart-environments
+  namespace: argocd
+spec:
+  goTemplate: true   # enables {{- if }}/{{- end }} control flow in the template block below, not just plain {{var}} substitution
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - list:
+        elements:
+          - env: dev
+            namespace: scalecart-dev
+            autoSync: "true"
+            prune: "true"
+          - env: staging
+            namespace: scalecart-staging
+            autoSync: "true"
+            prune: "true"
+          - env: prod
+            namespace: scalecart-prod
+            autoSync: "false"
+            prune: "false"
+  template:
+    metadata:
+      name: "scalecart-{{.env}}"
+      namespace: argocd
+    spec:
+      project: scalecart
+      source:
+        repoURL: "https://github.com/scalecart/scalecart.git"
+        targetRevision: main
+        path: helm/scalecart-umbrella
+        helm:
+          valueFiles:
+            - values.yaml
+            - "values-{{.env}}.yaml"
+      destination:
+        server: "https://kubernetes.default.svc"
+        namespace: "{{.namespace}}"
+      syncPolicy:
+        {{- if eq .autoSync "true" }}
+        automated:
+          prune: {{ .prune }}
+          selfHeal: true
+        {{- end }}
+        syncOptions:
+          - CreateNamespace=false
+          - ServerSideApply=true
