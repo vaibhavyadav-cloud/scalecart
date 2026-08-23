@@ -1,0 +1,44 @@
+---
+# kube-prometheus-stack bundles Prometheus (scrapes every pod carrying
+# the `prometheus.io/scrape: "true"` annotation - set on every Deployment
+# in k8s/base/, see docs/06), Alertmanager, and Grafana in one chart.
+# Jaeger adds distributed tracing, which Istio's Envoy sidecars emit spans
+# to automatically once tracing is enabled mesh-wide - neither requires
+# any code change in the 7 services themselves, since the instrumentation
+# lives at the mesh/metrics-endpoint layer, not the application layer.
+- name: Install kube-prometheus-stack (Prometheus + Alertmanager + Grafana) via Helm
+  kubernetes.core.helm:
+    name: kube-prometheus-stack
+    chart_ref: kube-prometheus-stack
+    chart_repo_url: https://prometheus-community.github.io/helm-charts
+    release_namespace: monitoring
+    create_namespace: true
+    values:
+      grafana:
+        defaultDashboardsEnabled: true
+      prometheus:
+        prometheusSpec:
+          # Scrapes any pod/service annotated prometheus.io/scrape=true
+          # across all namespaces - no per-service ServiceMonitor object
+          # needed for the 7 ScaleCart services.
+          additionalScrapeConfigs: []
+    wait: true
+
+- name: Install Jaeger (distributed tracing backend) via Helm
+  kubernetes.core.helm:
+    name: jaeger
+    chart_ref: jaeger
+    chart_repo_url: https://jaegertracing.github.io/helm-charts
+    release_namespace: monitoring
+    values:
+      provisionDataStore:
+        cassandra: false
+        elasticsearch: true   # simplest supported backend to stand up alongside the rest of this stack
+    wait: true
+
+- name: Enable Istio's tracing to send spans to Jaeger
+  ansible.builtin.command: >
+    {{ ansible_env.HOME }}/bin/istioctl install -y
+    --set meshConfig.enableTracing=true
+    --set meshConfig.defaultConfig.tracing.zipkin.address=jaeger-collector.monitoring:9411
+  changed_when: true

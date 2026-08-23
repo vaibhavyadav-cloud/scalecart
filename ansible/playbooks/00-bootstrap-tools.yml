@@ -1,0 +1,10 @@
+---
+# Run once per machine that will operate this cluster (a CI runner image,
+# a bastion, an engineer's laptop). Installs the CLI tools every other
+# playbook - and every human running kubectl/helm/istioctl/argocd by hand
+# - depends on. See docs/13-ansible.md.
+- name: Bootstrap operator tooling
+  hosts: local
+  become: false
+  roles:
+    - bootstrap_tools

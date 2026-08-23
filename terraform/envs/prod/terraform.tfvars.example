@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars (gitignored - see root .gitignore) and fill in
+# real values before running `terraform plan`/`apply` against a real AWS
+# account.
+aws_region          = "us-east-1"
+domain_name         = "scalecart.example.com"
+acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/REPLACE-ME"

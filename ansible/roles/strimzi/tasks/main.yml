@@ -1,0 +1,32 @@
+---
+# Strimzi is only installed for the in-cluster Kafka demo path (dev/
+# staging) - envs/prod's Terraform provisions Amazon MSK instead and this
+# role simply isn't part of the prod playbook run. See docs/08-kafka-event-driven.md.
+- name: Install the Strimzi Cluster Operator via Helm
+  kubernetes.core.helm:
+    name: strimzi-kafka-operator
+    chart_ref: strimzi-kafka-operator
+    chart_repo_url: https://strimzi.io/charts/
+    release_namespace: kafka
+    create_namespace: true
+    wait: true
+
+- name: Apply the Kafka cluster + topic definitions
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/../../k8s/kafka/{{ item }}"
+  loop:
+    - 01-kafka-cluster.yaml
+    - 02-topics.yaml
+
+- name: Wait for the Kafka cluster to report Ready
+  kubernetes.core.k8s_info:
+    api_version: kafka.strimzi.io/v1beta2
+    kind: Kafka
+    name: scalecart-kafka
+    namespace: kafka
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: 600

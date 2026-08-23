@@ -1,0 +1,66 @@
+---
+# Karpenter provisions BURST node capacity in seconds by launching exactly
+# the instance shapes/sizes a batch of unschedulable pods actually needs -
+# faster and more cost-efficient than waiting for a Cluster Autoscaler
+# cycle against a fixed set of pre-defined instance types. This is the
+# "burst" half of the capacity story from terraform/modules/eks's own
+# comment - Terraform provisions the always-on floor, Karpenter reacts to
+# everything above it. See docs/14-scaling-to-1m-users.md.
+- name: Install Karpenter CRDs + controller via Helm
+  kubernetes.core.helm:
+    name: karpenter
+    chart_ref: karpenter
+    chart_repo_url: oci://public.ecr.aws/karpenter/karpenter
+    chart_version: "{{ karpenter_version }}"
+    release_namespace: karpenter
+    create_namespace: true
+    values:
+      settings:
+        clusterName: "{{ eks_cluster_name }}"
+        interruptionQueue: "{{ eks_cluster_name }}-karpenter"
+    wait: true
+
+- name: Apply the default NodePool (what instance types/AZs Karpenter is allowed to launch)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: karpenter.sh/v1
+      kind: NodePool
+      metadata:
+        name: default
+      spec:
+        template:
+          spec:
+            requirements:
+              - key: karpenter.k8s.aws/instance-category
+                operator: In
+                values: ["m", "c", "r"]
+              - key: karpenter.sh/capacity-type
+                operator: In
+                # Spot for burst capacity - a mid-flight Spot interruption
+                # is tolerable for stateless, HPA-managed pods behind a
+                # Service with multiple replicas; it would NOT be
+                # tolerable for the baseline node group, which stays
+                # on-demand (terraform/modules/eks).
+                values: ["spot", "on-demand"]
+            nodeClassRef:
+              name: default
+        limits:
+          cpu: "1000"
+        disruption:
+          consolidationPolicy: WhenUnderutilized
+
+- name: Apply the default EC2NodeClass (AMI, subnets, security groups Karpenter launches into)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: karpenter.k8s.aws/v1
+      kind: EC2NodeClass
+      metadata:
+        name: default
+      spec:
+        amiFamily: AL2023
+        subnetSelectorTerms:
+          - tags: { "karpenter.sh/discovery": "{{ eks_cluster_name }}" }
+        securityGroupSelectorTerms:
+          - tags: { "aws:eks:cluster-name": "{{ eks_cluster_name }}" }

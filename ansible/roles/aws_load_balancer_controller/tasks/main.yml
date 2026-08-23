@@ -1,0 +1,31 @@
+---
+# Watches Kubernetes Ingress/Service/Gateway objects and provisions real
+# ALBs/NLBs in AWS to match. The Istio Ingress Gateway's Service (type
+# LoadBalancer) is what this controller actually provisions a load
+# balancer FOR - see k8s/istio/01-gateway.yaml and docs/07-istio-service-mesh.md.
+- name: Create ServiceAccount with IRSA annotation for the LB controller
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: aws-load-balancer-controller
+        namespace: kube-system
+        annotations:
+          eks.amazonaws.com/role-arn: "{{ lb_controller_role_arn }}"
+
+- name: Install AWS Load Balancer Controller via Helm
+  kubernetes.core.helm:
+    name: aws-load-balancer-controller
+    chart_ref: aws-load-balancer-controller
+    chart_repo_url: https://aws.github.io/eks-charts
+    release_namespace: kube-system
+    values:
+      clusterName: "{{ eks_cluster_name }}"
+      serviceAccount:
+        create: false
+        name: aws-load-balancer-controller
+      region: "{{ aws_region }}"
+      vpcId: "{{ vpc_id }}"
+    wait: true

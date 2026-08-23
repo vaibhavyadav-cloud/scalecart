@@ -1,0 +1,52 @@
+---
+# Installs ArgoCD itself, then applies the ONE manifest a human ever
+# applies by hand in this whole GitOps setup: the root app-of-apps
+# (argocd/root-app.yaml). Everything ArgoCD manages after this point is
+# managed by ArgoCD reading this same git repo - see docs/10-argocd-gitops.md.
+- name: Create the argocd namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: argocd
+
+- name: Install ArgoCD via Helm
+  kubernetes.core.helm:
+    name: argocd
+    chart_ref: argo-cd
+    chart_repo_url: https://argoproj.github.io/argo-helm
+    release_namespace: argocd
+    values:
+      server:
+        # In a real account this fronts the same ALB the AWS Load
+        # Balancer Controller manages for the Istio ingress gateway, on a
+        # separate hostname (argocd.scalecart.example.com) - left as
+        # ClusterIP here so this playbook doesn't assume a specific
+        # ingress setup is already wired up at bootstrap time.
+        service:
+          type: ClusterIP
+    wait: true
+
+- name: Wait for the ArgoCD API server to become available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: argocd-server
+    namespace: argocd
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 300
+
+- name: Apply the AppProject (scopes what ScaleCart Applications are allowed to touch)
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/../../argocd/projects/scalecart-project.yaml"
+
+- name: Apply the root app-of-apps Application
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/../../argocd/root-app.yaml"

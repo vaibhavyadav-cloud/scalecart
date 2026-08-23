@@ -1,0 +1,20 @@
+---
+# KEDA supplies the Kafka-consumer-lag metric that
+# k8s/keda/*-scaledobject.yaml scale payment-service and
+# notification-service on - see docs/08-kafka-event-driven.md.
+- name: Install KEDA via Helm
+  kubernetes.core.helm:
+    name: keda
+    chart_ref: keda
+    chart_repo_url: https://kedacore.github.io/charts
+    release_namespace: keda
+    create_namespace: true
+    wait: true
+
+- name: Apply the ScaledObjects for the two Kafka-consumer services
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/../../k8s/keda/{{ item }}"
+  loop:
+    - payment-consumer-scaledobject.yaml
+    - notification-consumer-scaledobject.yaml

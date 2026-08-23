@@ -1,0 +1,38 @@
+---
+# Installs the External Secrets Operator itself - what actually reconciles
+# the SecretStore/ExternalSecret objects declared in
+# k8s/base/03-external-secrets.yaml into real k8s Secrets, sourced from
+# AWS Secrets Manager. See docs/15-security-hardening.md.
+- name: Create ServiceAccount with IRSA annotation for External Secrets
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: external-secrets
+
+- name: Create the IRSA-annotated ServiceAccount External Secrets will run as
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: external-secrets-sa
+        namespace: external-secrets
+        annotations:
+          eks.amazonaws.com/role-arn: "{{ external_secrets_role_arn }}"
+
+- name: Install External Secrets Operator via Helm
+  kubernetes.core.helm:
+    name: external-secrets
+    chart_ref: external-secrets
+    chart_repo_url: https://charts.external-secrets.io
+    release_namespace: external-secrets
+    values:
+      serviceAccount:
+        create: false
+        name: external-secrets-sa
+      installCRDs: true
+    wait: true

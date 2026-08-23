@@ -1,0 +1,55 @@
+---
+# Installs the CLI tools every later playbook (and every engineer
+# operating this cluster) needs: kubectl, helm, istioctl, the ArgoCD CLI,
+# and awscli. Idempotent - `creates:` on each download means re-running
+# this playbook after the tools already exist is a no-op, not a re-download.
+- name: Ensure ~/bin exists and is on PATH for this session
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/bin"
+    state: directory
+    mode: "0755"
+
+- name: Install kubectl
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+    dest: "{{ ansible_env.HOME }}/bin/kubectl"
+    mode: "0755"
+    force: false
+
+- name: Install Helm
+  ansible.builtin.unarchive:
+    src: "https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz"
+    dest: "/tmp"
+    remote_src: true
+    creates: "/tmp/linux-amd64/helm"
+- name: Move helm binary into place
+  ansible.builtin.copy:
+    src: "/tmp/linux-amd64/helm"
+    dest: "{{ ansible_env.HOME }}/bin/helm"
+    mode: "0755"
+    remote_src: true
+
+- name: Install istioctl
+  ansible.builtin.unarchive:
+    src: "https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-linux-amd64.tar.gz"
+    dest: "/tmp"
+    remote_src: true
+    creates: "/tmp/istio-{{ istio_version }}/bin/istioctl"
+- name: Move istioctl binary into place
+  ansible.builtin.copy:
+    src: "/tmp/istio-{{ istio_version }}/bin/istioctl"
+    dest: "{{ ansible_env.HOME }}/bin/istioctl"
+    mode: "0755"
+    remote_src: true
+
+- name: Install ArgoCD CLI
+  ansible.builtin.get_url:
+    url: "https://github.com/argoproj/argo-cd/releases/download/{{ argocd_version }}/argocd-linux-amd64"
+    dest: "{{ ansible_env.HOME }}/bin/argocd"
+    mode: "0755"
+    force: false
+
+- name: Verify tool versions (fail fast if a download silently produced a broken binary)
+  ansible.builtin.command: "{{ ansible_env.HOME }}/bin/{{ item }} version --client"
+  loop: [kubectl, helm, istioctl]
+  changed_when: false

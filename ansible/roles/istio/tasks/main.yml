@@ -1,0 +1,46 @@
+---
+# Installed via istioctl (Istio's own recommended path), NOT a bare Helm
+# chart, because istioctl runs Istio's built-in pre-install cluster
+# compatibility checks first (`istioctl x precheck`) - catching a
+# resource-quota or webhook conflict here is a lot cheaper than debugging
+# a half-installed mesh later. See docs/07-istio-service-mesh.md.
+- name: Run Istio pre-install compatibility check
+  ansible.builtin.command: "{{ ansible_env.HOME }}/bin/istioctl x precheck"
+  changed_when: false
+
+- name: Install the Istio control plane (istiod) with the "demo"-derived production profile
+  ansible.builtin.command: >
+    {{ ansible_env.HOME }}/bin/istioctl install -y
+    --set profile=default
+    --set meshConfig.accessLogFile=/dev/stdout
+    --set values.pilot.resources.requests.cpu=200m
+    --set values.pilot.resources.requests.memory=256Mi
+  register: istio_install
+  changed_when: "'✔' in istio_install.stdout"
+
+- name: Label the application namespaces for automatic Envoy sidecar injection
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ item }}"
+        labels:
+          istio-injection: enabled
+  loop:
+    - scalecart-dev
+    - scalecart-staging
+    - scalecart-prod
+
+- name: Apply mesh-wide policy and routing manifests (mTLS, gateway, virtual services, circuit breaking, authz)
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/../../k8s/istio/{{ item }}"
+  loop:
+    - 00-peer-authentication.yaml
+    - 01-gateway.yaml
+    - 02-virtual-service.yaml
+    - 03-destination-rules.yaml
+    - 05-authorization-policies.yaml
+    - 06-sidecar-egress-scoping.yaml

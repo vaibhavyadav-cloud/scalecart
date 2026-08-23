@@ -26,15 +26,12 @@ spec:
           - env: dev
             namespace: scalecart-dev
             autoSync: "true"
-            prune: "true"
           - env: staging
             namespace: scalecart-staging
             autoSync: "true"
-            prune: "true"
           - env: prod
             namespace: scalecart-prod
             autoSync: "false"
-            prune: "false"
   template:
     metadata:
       name: "scalecart-{{.env}}"
@@ -54,8 +51,15 @@ spec:
         namespace: "{{.namespace}}"
       syncPolicy:
         {{- if eq .autoSync "true" }}
+        # Hardcoded true/true rather than templating booleans from the
+        # generator (which only ever produces strings) - a templated
+        # `{{ .value }}` in a field the ApplicationSet CRD's schema types
+        # as `boolean` can fail admission validation before ArgoCD's own
+        # templating ever runs. Both dev and staging always want the same
+        # prune/selfHeal behavior when auto-sync is on, so there's nothing
+        # to actually parameterize here.
         automated:
-          prune: {{ .prune }}
+          prune: true
           selfHeal: true
         {{- end }}
         syncOptions:

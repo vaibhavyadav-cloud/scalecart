@@ -23,9 +23,9 @@ resource "aws_subnet" "public" {
   cidr_block              = cidrsubnet(var.vpc_cidr, 8, count.index)
   map_public_ip_on_launch = true
   tags = merge(var.tags, {
-    Name                                        = "${var.name}-public-${var.azs[count.index]}"
-    "kubernetes.io/role/elb"                    = "1"   # required tag for the AWS Load Balancer Controller to auto-discover this subnet
-    "kubernetes.io/cluster/${var.name}-eks"     = "shared"
+    Name                                    = "${var.name}-public-${var.azs[count.index]}"
+    "kubernetes.io/role/elb"                = "1" # required tag for the AWS Load Balancer Controller to auto-discover this subnet
+    "kubernetes.io/cluster/${var.name}-eks" = "shared"
   })
 }
 
@@ -35,12 +35,12 @@ resource "aws_subnet" "private" {
   availability_zone = var.azs[count.index]
   cidr_block        = cidrsubnet(var.vpc_cidr, 8, count.index + 10)
   tags = merge(var.tags, {
-    Name                                        = "${var.name}-private-${var.azs[count.index]}"
-    "kubernetes.io/role/internal-elb"           = "1"
-    "kubernetes.io/cluster/${var.name}-eks"     = "shared"
+    Name                                    = "${var.name}-private-${var.azs[count.index]}"
+    "kubernetes.io/role/internal-elb"       = "1"
+    "kubernetes.io/cluster/${var.name}-eks" = "shared"
     # Karpenter (installed by ansible/playbooks/01-install-cluster-addons.yml)
     # discovers which subnets it's allowed to launch nodes into via this tag.
-    "karpenter.sh/discovery"                    = "${var.name}-eks"
+    "karpenter.sh/discovery" = "${var.name}-eks"
   })
 }
 

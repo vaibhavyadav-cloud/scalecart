@@ -1,0 +1,13 @@
+---
+# The HorizontalPodAutoscaler resources in k8s/base/1*-*.yaml are inert
+# without this - metrics-server is what actually supplies the CPU/memory
+# utilization numbers the HPA controller reads every 15s. Installed first
+# among the add-ons, since almost everything else in this playbook
+# assumes it's present.
+- name: Install metrics-server via Helm
+  kubernetes.core.helm:
+    name: metrics-server
+    chart_ref: metrics-server
+    chart_repo_url: https://kubernetes-sigs.github.io/metrics-server/
+    release_namespace: kube-system
+    wait: true

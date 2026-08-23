@@ -34,7 +34,7 @@ resource "aws_eks_cluster" "this" {
   vpc_config {
     subnet_ids              = concat(var.private_subnet_ids, var.public_subnet_ids)
     endpoint_private_access = true
-    endpoint_public_access  = true   # restrict to a CIDR allowlist in a real prod account; left open here for portfolio-demo simplicity
+    endpoint_public_access  = true # restrict to a CIDR allowlist in a real prod account; left open here for portfolio-demo simplicity
   }
 
   # Control-plane audit/authenticator logs shipped to CloudWatch - "who
@@ -92,7 +92,7 @@ resource "aws_eks_node_group" "baseline" {
   node_role_arn   = aws_iam_role.node_group.arn
   subnet_ids      = var.private_subnet_ids
   instance_types  = var.node_instance_types
-  capacity_type   = "ON_DEMAND"   # baseline floor stays on-demand for predictability; Karpenter's burst NodePool (Ansible-managed) is where Spot is used for cost savings
+  capacity_type   = "ON_DEMAND" # baseline floor stays on-demand for predictability; Karpenter's burst NodePool (Ansible-managed) is where Spot is used for cost savings
 
   scaling_config {
     min_size     = var.node_min_size

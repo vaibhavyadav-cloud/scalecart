@@ -1,0 +1,32 @@
+---
+# Run once, right after `terraform apply` creates the EKS cluster
+# (terraform/envs/<env>) and before any application workload is deployed.
+# This is the "Configuration Management" half of the IaC + CM split
+# described in docs/13-ansible.md: Terraform provisioned the cluster and
+# its cloud dependencies (RDS, DocumentDB, Redis, IAM roles); this
+# playbook installs and configures the SOFTWARE that runs inside the
+# cluster to make it actually usable - the two tools intentionally don't
+# overlap.
+#
+# Required variables (pass via -e, or a vars file - never commit real
+# values): eks_cluster_name, aws_region, vpc_id, lb_controller_role_arn,
+# external_secrets_role_arn - all are direct outputs of
+# `terraform output` from the matching env. See docs/13-ansible.md.
+- name: Install and configure EKS cluster add-ons
+  hosts: local
+  become: false
+  vars:
+    install_kafka_in_cluster: true   # false for prod, which uses Terraform-provisioned MSK instead - see terraform/modules/msk
+  roles:
+    - metrics_server
+    - aws_load_balancer_controller
+    - karpenter
+    - external_secrets
+    - istio
+    - keda
+    - observability
+  tasks:
+    - name: Install Strimzi (in-cluster Kafka) when this environment doesn't use MSK
+      ansible.builtin.include_role:
+        name: strimzi
+      when: install_kafka_in_cluster

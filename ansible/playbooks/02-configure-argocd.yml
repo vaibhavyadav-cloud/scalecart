@@ -1,0 +1,11 @@
+---
+# Run once, after 01-install-cluster-addons.yml. From this point forward,
+# every other Application, AppProject, and ApplicationSet in argocd/apps/
+# is managed BY ArgoCD reading this git repo - see docs/10-argocd-gitops.md.
+# This playbook is the last manual/imperative step in this project's
+# entire deploy story; everything after it is GitOps.
+- name: Bootstrap ArgoCD and the root app-of-apps
+  hosts: local
+  become: false
+  roles:
+    - argocd
