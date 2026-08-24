@@ -93,6 +93,7 @@ make test-all       # every service's own test suite
 16. [Observability](docs/16-observability.md)
 17. [Local quickstart](docs/17-local-quickstart.md)
 18. [Resume bullets & interview Q&A](docs/18-resume-bullets-and-interview-qna.md)
+19. [EC2 deployment (resume-demo path)](docs/19-ec2-deployment.md)
 
 ## Tech stack
 
