@@ -38,6 +38,21 @@ spring:
       retries: 5
       properties:
         enable.idempotence: true   # prevents duplicate order.created events on producer retry
+    consumer:
+      # Own consumer group, separate from payment-service-group and
+      # notification-service-group - Kafka fans payment.completed/failed
+      # out to all three groups independently. This is what closes the
+      # loop so an order's status actually changes after checkout instead
+      # of staying PENDING forever - see PaymentEventConsumer.java and
+      # docs/08-kafka-event-driven.md.
+      group-id: order-service-group
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.scalecart.order.event"
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: com.scalecart.order.event.PaymentEvent
 
 # Fail-fast: if a required property is missing at startup, crash immediately
 # instead of failing mysteriously on the first request in production.

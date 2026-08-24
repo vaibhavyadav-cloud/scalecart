@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 // Docker image is even built - see docs/11-github-actions-cicd.md.
 @SpringBootTest
 @ActiveProfiles("test")
-@EmbeddedKafka(partitions = 1, topics = {"order.created", "order.cancelled"})
+@EmbeddedKafka(partitions = 1, topics = {"order.created", "order.cancelled", "payment.completed", "payment.failed"})
 class OrderServiceIntegrationTest {
 
     @Autowired

@@ -12,6 +12,10 @@ dist/
 build/
 *.class
 bin/
+.next/
+out/
+*.tsbuildinfo
+coverage/
 
 # Env / secrets
 .env

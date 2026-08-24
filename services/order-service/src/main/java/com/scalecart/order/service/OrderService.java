@@ -72,15 +72,31 @@ public class OrderService {
         return saved;
     }
 
+    // `items` is a LAZY collection (Order.java) and open-in-view is
+    // disabled (application.yml), so the Hibernate session closes the
+    // instant this @Transactional method returns - the controller's JSON
+    // serialization happens strictly after that. Touching
+    // order.getItems() here, still inside the transaction, is what makes
+    // the response actually contain line items instead of throwing a
+    // LazyInitializationException the first time the frontend's order
+    // detail page (services/frontend/src/app/orders/[id]/page.tsx) hits
+    // GET /orders/:id.
     @Transactional(readOnly = true)
     public Order getOrder(UUID id) {
-        return orderRepository.findById(id)
+        Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new OrderNotFoundException(id));
+        order.getItems().size();
+        return order;
     }
 
     @Transactional(readOnly = true)
     public Page<Order> listOrdersForUser(String userId, Pageable pageable) {
-        return orderRepository.findByUserId(userId, pageable);
+        Page<Order> page = orderRepository.findByUserId(userId, pageable);
+        // Same reasoning as getOrder, applied per order in the page -
+        // @BatchSize(25) on Order.items (see Order.java) means this is
+        // one extra batched query for the whole page, not one per order.
+        page.getContent().forEach(order -> order.getItems().size());
+        return page;
     }
 
     public static class OrderNotFoundException extends RuntimeException {

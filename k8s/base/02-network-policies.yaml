@@ -57,6 +57,28 @@ spec:
     - from:
         - podSelector: {}   # allow same-namespace pod-to-pod (mesh services calling each other)
 ---
+# The other half of the rule above: NetworkPolicy requires BOTH sides to
+# allow a connection, so granting same-namespace INGRESS (every pod may
+# be called by every other pod) without a matching EGRESS allow still
+# blocks every call under default-deny - e.g. frontend calling
+# auth-service, or order-service's synchronous stock-reservation call to
+# product-service (ProductServiceClient.java), would silently fail with
+# nothing but a connection timeout. This mirrors that ingress rule on the
+# egress side so intra-namespace service-to-service traffic actually
+# works; AuthorizationPolicy (k8s/istio/05-authorization-policies.yaml)
+# is still what enforces exactly WHO is allowed to call WHAT.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace-egress
+  namespace: scalecart-prod
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {}
+---
 # Application pods -> their own databases only (egress to the data-layer
 # CIDR/hostname would be added per environment; scoped by label here for
 # the in-cluster Kafka/Strimzi demo path).
