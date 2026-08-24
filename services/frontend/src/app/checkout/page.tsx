@@ -68,7 +68,7 @@ export default function CheckoutPage() {
         }))
       );
       await clear();
-      router.push(`/orders/${order.id}`);
+      router.push(`/orders/detail?id=${order.id}`);
     } catch (e) {
       setError(
         e instanceof Error && e.message === "insufficient_stock"

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { fetchOrder, fetchPayment, formatPrice, Order, Payment } from "@/lib/api";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ErrorBanner } from "@/components/EmptyState";
@@ -11,15 +11,38 @@ const TERMINAL_STATUSES = new Set(["PAID", "FAILED", "CANCELLED"]);
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 30000;
 
-// order-service returns "order accepted" the instant it's written -
-// payment capture and the resulting status flip both happen afterward,
-// asynchronously, over Kafka (order-service's PaymentEventConsumer, see
-// docs/08-kafka-event-driven.md). This page polls both order-service AND
-// payment-service until either reaches a terminal state, so a viewer can
-// watch PENDING -> PAID happen live instead of the UI just lying and
-// showing a fake "success" the moment the order is created.
+// This is a query-param route (/orders/detail?id=...), not a dynamic
+// segment (/orders/[id]) - deliberately. next.config.js uses
+// `output: "export"` (a plain static build served by nginx, see
+// docs/04-docker-optimization.md), and static export requires every
+// dynamic-segment path to be enumerable at BUILD time via
+// generateStaticParams(). Order IDs are created by users at runtime,
+// which is exactly the case static export can't represent as a dynamic
+// segment. A query param sidesteps that entirely: /orders/detail is one
+// static HTML file, and `id` is read client-side from the URL - no
+// server-side routing needed for it to work.
 export default function OrderDetailPage() {
-  const params = useParams<{ id: string }>();
+  // useSearchParams() requires a Suspense boundary even in a fully
+  // client-rendered page - Next.js enforces this at build time (it
+  // still statically prerenders the page shell), so the actual
+  // data-fetching logic lives in a child component wrapped here.
+  return (
+    <Suspense
+      fallback={
+        <div className="flex justify-center py-16">
+          <Spinner />
+        </div>
+      }
+    >
+      <OrderDetail />
+    </Suspense>
+  );
+}
+
+function OrderDetail() {
+  const searchParams = useSearchParams();
+  const orderId = searchParams.get("id");
+
   const [order, setOrder] = useState<Order | null>(null);
   const [payment, setPayment] = useState<Payment | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,14 +50,19 @@ export default function OrderDetailPage() {
   const startedAt = useRef(Date.now());
 
   useEffect(() => {
+    if (!orderId) {
+      setError("missing order id");
+      return;
+    }
+
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
 
     async function tick() {
       try {
         const [nextOrder, nextPayment] = await Promise.all([
-          fetchOrder(params.id),
-          fetchPayment(params.id),
+          fetchOrder(orderId!),
+          fetchPayment(orderId!),
         ]);
         if (cancelled) return;
         setOrder(nextOrder);
@@ -60,7 +88,7 @@ export default function OrderDetailPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [params.id]);
+  }, [orderId]);
 
   if (error) return <ErrorBanner message={`Could not load order: ${error}`} />;
   if (!order) {
