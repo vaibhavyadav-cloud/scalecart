@@ -6,6 +6,7 @@ on:
     paths: ["services/cart-service/**"]
   pull_request:
     paths: ["services/cart-service/**"]
+  workflow_dispatch:
 
 jobs:
   build:
