@@ -131,7 +131,7 @@ jobs:
       # so a vulnerable image is never actually deployed even though it
       # briefly exists in the registry.
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: "${{ env.IMAGE }}:${{ github.sha }}"
           format: sarif
