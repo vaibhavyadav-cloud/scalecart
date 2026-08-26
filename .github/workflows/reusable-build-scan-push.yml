@@ -92,6 +92,7 @@ jobs:
       # The action BLOCKS the job (exit non-zero) if the project's quality
       # gate fails - a real gate, not just a dashboard nobody looks at.
       - name: SonarQube Scan
+        if: vars.SONAR_HOST_URL != ''
         uses: SonarSource/sonarqube-scan-action@v3
         with:
           projectBaseDir: ${{ inputs.service_path }}
